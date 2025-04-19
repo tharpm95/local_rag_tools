@@ -3,6 +3,11 @@ import chromadb
 import psycopg
 from psycopg.rows import dict_row
 
+# Configuration
+SYSTEM_INSTRUCTIONS_PATH = './templates/stepbystep.txt'
+PRIMER_PATH = './primers/001.txt'
+
+# Initialize client
 client = chromadb.Client()
 convo = []
 DB_PARAMS = {
@@ -53,13 +58,13 @@ def stream_response(prompt):
 def create_vector_db(conversations):
     vector_db_name = 'conversations'
 
+    # Ensure collection exists
     try:
-        client.delete_collection(name=vector_db_name)
-    except ValueError:
-        pass
+        vector_db = client.get_collection(name=vector_db_name)
+    except chromadb.errors.InvalidCollectionException:
+        vector_db = client.create_collection(name=vector_db_name)
 
-    vector_db = client.create_collection(name=vector_db_name)
-
+    # Add data to the collection
     for c in conversations:
         serialized_convo = f'prompt: {c["prompt"]} response: {c["response"]}'
         response = ollama.embeddings(model='nomic-embed-text', prompt=serialized_convo)
@@ -84,9 +89,29 @@ def retreive_embeddings(prompt):
 
     return best_embedding
 
+def load_system_instructions():
+    with open(SYSTEM_INSTRUCTIONS_PATH, 'r') as file:
+        instructions = file.read()
+    convo.append({'role': 'system', 'content': instructions})
+
+def load_primer():
+    with open(PRIMER_PATH, 'r') as file:
+        primer_content = file.read()
+    return primer_content
+
+# Load system instructions and primer
+load_system_instructions()
+initial_prompt = load_primer()
+
+# Fetch and process historical conversations
 conversations = fetch_conversations()
 create_vector_db(conversations=conversations)
 
+# Perform an initial interaction with the primer
+context = retreive_embeddings(prompt=initial_prompt)
+stream_response(prompt=f'USER PROMPT: {initial_prompt} CONTEXT: {context}')
+
+# Main interaction loop
 while True:
     prompt = input('USER: \n')
     context = retreive_embeddings(prompt=prompt)
