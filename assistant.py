@@ -31,6 +31,7 @@ def fetch_conversations():
     return conversations
 
 def store_conversations(prompt, response):
+    # Store only the actual prompt and response
     conn = connect_db()
     with conn.cursor() as cursor:
         cursor.execute(
@@ -52,7 +53,9 @@ def stream_response(prompt):
         print(content, end='', flush=True)
 
     print('\n')
-    store_conversations(prompt, response)
+    # Store the original user prompt, without context, with the response
+    original_prompt = prompt.split(' CONTEXT: ')[0].replace('USER PROMPT: ', '')
+    store_conversations(original_prompt, response)
     convo.append({'role': 'assistant', 'content': response})
 
 def create_vector_db(conversations):
@@ -115,5 +118,5 @@ stream_response(prompt=f'USER PROMPT: {initial_prompt} CONTEXT: {context}')
 while True:
     prompt = input('USER: \n')
     context = retreive_embeddings(prompt=prompt)
-    prompt = f'USER PROMPT: {prompt} CONTEXT: {context}'
-    stream_response(prompt=prompt)
+    prompt_with_context = f'USER PROMPT: {prompt} CONTEXT: {context}'
+    stream_response(prompt=prompt_with_context)
