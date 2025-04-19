@@ -1,25 +1,39 @@
 import ollama
 import chromadb
+import psycopg
+from psycopg.rows import dict_row
 
 client = chromadb.Client()
-message_history = [
-    {
-        'id': '1',
-        'prompt': 'Hello, how are you?',
-        'response': 'I am doing well, thank you!'
-    },
-    {
-        'id': '2',
-        'prompt': 'Hello, how aree you?',
-        'response': 'I am doing weell, thank you!'
-    },
-    {
-        'id': '3',
-        'prompt': 'Hello, how areee you?',
-        'response': 'I am doing weeell, thank you!'
-    }
-]
 convo = []
+DB_PARAMS = {
+    'dbname': 'mydatabase',
+    'user': 'myuser',
+    'password': 'mypassword',
+    'host': 'localhost',
+    'port': '5432'
+}
+
+def connect_db():
+    conn = psycopg.connect(**DB_PARAMS)
+    return conn
+
+def fetch_conversations():
+    conn = connect_db()
+    with conn.cursor(row_factory=dict_row) as cursor:
+        cursor.execute("SELECT * FROM conversations")
+        conversations = cursor.fetchall()
+    conn.close()
+    return conversations
+
+def store_conversations(prompt, response):
+    conn = connect_db()
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO conversations (prompt, response) VALUES (%s, %s)",
+            (prompt, response)
+        )
+        conn.commit()
+    conn.close()
 
 def stream_response(prompt):
     convo.append({'role': 'user', 'content': prompt})
@@ -33,6 +47,7 @@ def stream_response(prompt):
         print(content, end='', flush=True)
 
     print('\n')
+    store_conversations(prompt, response)
     convo.append({'role': 'assistant', 'content': response})
 
 def create_vector_db(conversations):
@@ -65,11 +80,12 @@ def retreive_embeddings(prompt):
         query_embeddings=[prompt_embedding],
         n_results=1,
     )
-    best_embedding = results['documents'][0][0]
+    best_embedding = results['documents'][0]
 
     return best_embedding
 
-create_vector_db(conversations=message_history)
+conversations = fetch_conversations()
+create_vector_db(conversations=conversations)
 
 while True:
     prompt = input('USER: \n')
