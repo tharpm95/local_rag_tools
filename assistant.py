@@ -4,7 +4,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 # Configuration
-SYSTEM_INSTRUCTIONS_PATH = './templates/quickcode.txt'
+SYSTEM_INSTRUCTIONS_PATH = './templates/stepbystep.txt'
 PRIMER_PATH = './primers/001.txt'
 
 # Initialize client
@@ -43,7 +43,7 @@ def store_conversations(prompt, response):
 def stream_response(prompt):
     convo.append({'role': 'user', 'content': prompt})
     response = ''
-    stream = ollama.chat(model='gemma3:1b', messages=convo, stream=True)
+    stream = ollama.chat(model='qwen2.5-coder:latest', messages=convo, stream=True)
     print('ASSISTANT: \n', end='', flush=True)
 
     for chunk in stream:
