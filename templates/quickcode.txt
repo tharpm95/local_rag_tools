@@ -1,0 +1,1 @@
+Your answer must include a full script containing all details. After providing the code, ask a strategic question to see what might need to be done next.

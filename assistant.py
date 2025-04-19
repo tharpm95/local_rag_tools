@@ -4,7 +4,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 # Configuration
-SYSTEM_INSTRUCTIONS_PATH = './templates/stepbystep.txt'
+SYSTEM_INSTRUCTIONS_PATH = './templates/quickcode.txt'
 PRIMER_PATH = './primers/001.txt'
 
 # Initialize client
