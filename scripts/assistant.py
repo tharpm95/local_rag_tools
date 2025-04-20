@@ -1,11 +1,19 @@
+import os
+from dotenv import load_dotenv
 import ollama
 import chromadb
 import psycopg
 from psycopg.rows import dict_row
 
+# Load environment variables
+load_dotenv()
+
+# Retrieve BASE_DIR from environment variables
+BASE_DIR = os.getenv('BASE_DIR')
+
 # Configuration
-SYSTEM_INSTRUCTIONS_PATH = './templates/stepbystep.txt'
-PRIMER_PATH = './primers/001.txt'
+SYSTEM_INSTRUCTIONS_PATH = os.path.join(BASE_DIR, 'templates', '_template.txt')
+PRIMER_PATH = os.path.join(BASE_DIR, 'primers', '_primer.txt')
 
 # Initialize client
 client = chromadb.Client()

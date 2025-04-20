@@ -1,3 +1,7 @@
+alias ragre='(cd /path/to/local_rag_tools && echo "This will shut down and restart the Docker containers, which may cause data loss if not saved. Do you want to proceed? (y/n)" && read confirm && [[ "$confirm" == [yY] ]] && TIMESTAMP=$(date +%Y%m%d%H%M%S) && sudo docker exec local_rag_tools-postgres_db-1 pg_dump -U postgres > "/path/to/local_rag_tools/backup/postgres_backup_$TIMESTAMP.sql" && sudo docker compose down --volumes && sudo docker compose up --build -d)'
+
+------------------------------------------------------------------------------------------
+
 jdbc:postgresql://localhost:5432/mydatabase?user=myuser&password=mypassword
 
 ------------------------------------------------------------------------------------------
