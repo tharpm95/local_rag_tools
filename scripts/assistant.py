@@ -17,6 +17,7 @@ BASE_DIR = os.getenv('BASE_DIR')
 # Configuration
 SYSTEM_INSTRUCTIONS_PATH = os.path.join(BASE_DIR, 'templates', 'stepbystep.txt')
 SECONDARY_INSTRUCTIONS_PATH = os.path.join(BASE_DIR, 'templates', 'quickcode.txt')
+TERTIARY_INSTRUCTIONS_PATH = os.path.join(BASE_DIR, 'templates', 'paragraph.txt')  # New path for tertiary instructions
 PRIMER_PATH = os.path.join(BASE_DIR, 'primers', '_primer.txt')
 
 # Initialize clients and models
@@ -137,7 +138,6 @@ def load_system_instructions(path):
     with open(path, 'r') as file:
         instructions = file.read()
     convo.append({'role': 'system', 'content': instructions})
-    print("Conversation:\n", convo)
     return instructions
 
 def load_primer():
@@ -173,7 +173,6 @@ while True:
         main_prompt = prompt[2:].strip()
         context_documents = retrieve_and_rerank_embeddings(prompt=main_prompt)
         context_summary = summarize_documents(context_documents)
-        print("Relevant Contextual Summary:\n", context_summary)
         prompt_with_context = f'USER PROMPT: {main_prompt} CONTEXT: {context_summary}'
         stream_response(prompt=prompt_with_context, instructions=system_instructions)
     elif prompt.startswith("/2"):
@@ -182,12 +181,18 @@ while True:
         main_prompt = prompt[2:].strip()
         context_documents = retrieve_and_rerank_embeddings(prompt=main_prompt)
         context_summary = summarize_documents(context_documents)
-        print("Relevant Contextual Summary:\n", context_summary)
+        prompt_with_context = f'USER PROMPT: {main_prompt} CONTEXT: {context_summary}'
+        stream_response(prompt=prompt_with_context, instructions=system_instructions)
+    elif prompt.startswith("/3"):
+        system_instructions = load_system_instructions(TERTIARY_INSTRUCTIONS_PATH)
+        print("Tertiary instructions loaded.")
+        main_prompt = prompt[2:].strip()
+        context_documents = retrieve_and_rerank_embeddings(prompt=main_prompt)
+        context_summary = summarize_documents(context_documents)
         prompt_with_context = f'USER PROMPT: {main_prompt} CONTEXT: {context_summary}'
         stream_response(prompt=prompt_with_context, instructions=system_instructions)
     else:
         context_documents = retrieve_and_rerank_embeddings(prompt=prompt)
         context_summary = summarize_documents(context_documents)
-        print("Relevant Contextual Summary:\n", context_summary)
         prompt_with_context = f'USER PROMPT: {prompt} CONTEXT: {context_summary}'
         stream_response(prompt=prompt_with_context, instructions=system_instructions)
