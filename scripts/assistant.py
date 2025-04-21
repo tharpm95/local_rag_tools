@@ -4,6 +4,7 @@ import ollama
 import chromadb
 import psycopg
 from psycopg.rows import dict_row
+from sentence_transformers import SentenceTransformer, util
 
 # Load environment variables
 load_dotenv()
@@ -12,11 +13,13 @@ load_dotenv()
 BASE_DIR = os.getenv('BASE_DIR')
 
 # Configuration
-SYSTEM_INSTRUCTIONS_PATH = os.path.join(BASE_DIR, 'templates', '_template.txt')
+SYSTEM_INSTRUCTIONS_PATH = os.path.join(BASE_DIR, 'templates', 'stepbystep.txt')
 PRIMER_PATH = os.path.join(BASE_DIR, 'primers', '_primer.txt')
 
-# Initialize client
+# Initialize client and models
 client = chromadb.Client()
+sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
+
 convo = []
 DB_PARAMS = {
     'dbname': 'mydatabase',
@@ -39,7 +42,6 @@ def fetch_conversations():
     return conversations
 
 def store_conversations(prompt, response):
-    # Store only the actual prompt and response
     conn = connect_db()
     with conn.cursor() as cursor:
         cursor.execute(
@@ -61,7 +63,6 @@ def stream_response(prompt):
         print(content, end='', flush=True)
 
     print('\n')
-    # Store the original user prompt, without context, with the response
     original_prompt = prompt.split(' CONTEXT: ')[0].replace('USER PROMPT: ', '')
     store_conversations(original_prompt, response)
     convo.append({'role': 'assistant', 'content': response})
@@ -69,13 +70,11 @@ def stream_response(prompt):
 def create_vector_db(conversations):
     vector_db_name = 'conversations'
 
-    # Ensure collection exists
     try:
         vector_db = client.get_collection(name=vector_db_name)
     except chromadb.errors.InvalidCollectionException:
         vector_db = client.create_collection(name=vector_db_name)
 
-    # Add data to the collection
     for c in conversations:
         serialized_convo = f'prompt: {c["prompt"]} response: {c["response"]}'
         response = ollama.embeddings(model='nomic-embed-text', prompt=serialized_convo)
@@ -87,18 +86,34 @@ def create_vector_db(conversations):
             documents=[serialized_convo]
         )
 
-def retreive_embeddings(prompt):
+def retrieve_and_rerank_embeddings(prompt, num_results=5):
     response = ollama.embeddings(model='nomic-embed-text', prompt=prompt)
     prompt_embedding = response['embedding']
 
     vector_db = client.get_collection(name='conversations')
     results = vector_db.query(
         query_embeddings=[prompt_embedding],
-        n_results=1,
+        n_results=num_results
     )
-    best_embedding = results['documents'][0]
+    
+    # Debugging print statements
+    # print("Query Results:\n", results)  # Check the overall structure of the results
+    # print("Documents type:", type(results['documents']))  # Type of the 'documents'
+    # print("Documents:\n", results['documents'])  # Inspect the raw documents list
+    
+    documents = results['documents']
+    
+    document_embeddings = sbert_model.encode(documents, convert_to_tensor=True)
+    prompt_embedding_sbert = sbert_model.encode(prompt, convert_to_tensor=True)
+    cosine_scores = util.pytorch_cos_sim(prompt_embedding_sbert, document_embeddings)
 
-    return best_embedding
+    scored_documents = list(zip(documents, cosine_scores.tolist()[0]))
+    sorted_documents = sorted(scored_documents, key=lambda x: x[1], reverse=True)
+    
+    # Finalize the document list as a flat list of strings
+    flat_documents = [doc if isinstance(doc, str) else doc[0] for doc, _ in sorted_documents]
+    
+    return flat_documents
 
 def load_system_instructions():
     with open(SYSTEM_INSTRUCTIONS_PATH, 'r') as file:
@@ -119,12 +134,15 @@ conversations = fetch_conversations()
 create_vector_db(conversations=conversations)
 
 # Perform an initial interaction with the primer
-context = retreive_embeddings(prompt=initial_prompt)
-stream_response(prompt=f'USER PROMPT: {initial_prompt} CONTEXT: {context}')
+context_documents = retrieve_and_rerank_embeddings(prompt=initial_prompt)
+context_responses = ' '.join(context_documents)
+stream_response(prompt=f'USER PROMPT: {initial_prompt} CONTEXT: {context_responses}')
 
 # Main interaction loop
 while True:
     prompt = input('USER: \n')
-    context = retreive_embeddings(prompt=prompt)
-    prompt_with_context = f'USER PROMPT: {prompt} CONTEXT: {context}'
+    context_documents = retrieve_and_rerank_embeddings(prompt=prompt)
+    context_responses = ' '.join(context_documents)
+    print("Relevant Contextual Responses:\n", context_responses)
+    prompt_with_context = f'USER PROMPT: {prompt} CONTEXT: {context_responses}'
     stream_response(prompt=prompt_with_context)
