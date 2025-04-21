@@ -5,6 +5,7 @@ import chromadb
 import psycopg
 from psycopg.rows import dict_row
 from sentence_transformers import SentenceTransformer, util
+from transformers import T5ForConditionalGeneration, T5Tokenizer
 
 # Load environment variables
 load_dotenv()
@@ -16,9 +17,11 @@ BASE_DIR = os.getenv('BASE_DIR')
 SYSTEM_INSTRUCTIONS_PATH = os.path.join(BASE_DIR, 'templates', 'stepbystep.txt')
 PRIMER_PATH = os.path.join(BASE_DIR, 'primers', '_primer.txt')
 
-# Initialize client and models
+# Initialize clients and models
 client = chromadb.Client()
 sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
+t5_model = T5ForConditionalGeneration.from_pretrained('t5-small')  # Using a small T5 model for summarization
+t5_tokenizer = T5Tokenizer.from_pretrained('t5-small')
 
 convo = []
 DB_PARAMS = {
@@ -86,6 +89,19 @@ def create_vector_db(conversations):
             documents=[serialized_convo]
         )
 
+def summarize_documents(documents):
+    # Concatenate documents into a single string
+    text_to_summarize = " ".join(documents)
+    
+    # Prepare text for summarization
+    inputs = t5_tokenizer.encode("summarize: " + text_to_summarize, return_tensors="pt", max_length=512, truncation=True)
+    
+    # Generate summary
+    summary_ids = t5_model.generate(inputs, max_length=150, min_length=40, length_penalty=2.0, num_beams=4, early_stopping=True)
+    summary = t5_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    
+    return summary
+
 def retrieve_and_rerank_embeddings(prompt, num_results=5):
     response = ollama.embeddings(model='nomic-embed-text', prompt=prompt)
     prompt_embedding = response['embedding']
@@ -96,12 +112,7 @@ def retrieve_and_rerank_embeddings(prompt, num_results=5):
         n_results=num_results
     )
     
-    # Debugging print statements
-    # print("Query Results:\n", results)  # Check the overall structure of the results
-    # print("Documents type:", type(results['documents']))  # Type of the 'documents'
-    # print("Documents:\n", results['documents'])  # Inspect the raw documents list
-    
-    documents = results['documents']
+    documents = [doc for doc_list in results['documents'] for doc in doc_list]  # Flatten list of lists
     
     document_embeddings = sbert_model.encode(documents, convert_to_tensor=True)
     prompt_embedding_sbert = sbert_model.encode(prompt, convert_to_tensor=True)
@@ -110,8 +121,7 @@ def retrieve_and_rerank_embeddings(prompt, num_results=5):
     scored_documents = list(zip(documents, cosine_scores.tolist()[0]))
     sorted_documents = sorted(scored_documents, key=lambda x: x[1], reverse=True)
     
-    # Finalize the document list as a flat list of strings
-    flat_documents = [doc if isinstance(doc, str) else doc[0] for doc, _ in sorted_documents]
+    flat_documents = [doc for doc, _ in sorted_documents]
     
     return flat_documents
 
@@ -135,14 +145,14 @@ create_vector_db(conversations=conversations)
 
 # Perform an initial interaction with the primer
 context_documents = retrieve_and_rerank_embeddings(prompt=initial_prompt)
-context_responses = ' '.join(context_documents)
-stream_response(prompt=f'USER PROMPT: {initial_prompt} CONTEXT: {context_responses}')
+context_summary = summarize_documents(context_documents)
+stream_response(prompt=f'USER PROMPT: {initial_prompt} CONTEXT: {context_summary}')
 
 # Main interaction loop
 while True:
     prompt = input('USER: \n')
     context_documents = retrieve_and_rerank_embeddings(prompt=prompt)
-    context_responses = ' '.join(context_documents)
-    print("Relevant Contextual Responses:\n", context_responses)
-    prompt_with_context = f'USER PROMPT: {prompt} CONTEXT: {context_responses}'
+    context_summary = summarize_documents(context_documents)
+    print("Relevant Contextual Summary:\n", context_summary)
+    prompt_with_context = f'USER PROMPT: {prompt} CONTEXT: {context_summary}'
     stream_response(prompt=prompt_with_context)
