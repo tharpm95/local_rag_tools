@@ -20,7 +20,7 @@ PRIMER_PATH = os.path.join(BASE_DIR, 'primers', '_primer.txt')
 # Initialize clients and models
 client = chromadb.Client()
 sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
-t5_model = T5ForConditionalGeneration.from_pretrained('t5-small')  # Using a small T5 model for summarization
+t5_model = T5ForConditionalGeneration.from_pretrained('t5-small')
 t5_tokenizer = T5Tokenizer.from_pretrained('t5-small')
 
 convo = []
@@ -90,16 +90,10 @@ def create_vector_db(conversations):
         )
 
 def summarize_documents(documents):
-    # Concatenate documents into a single string
     text_to_summarize = " ".join(documents)
-    
-    # Prepare text for summarization
     inputs = t5_tokenizer.encode("summarize: " + text_to_summarize, return_tensors="pt", max_length=512, truncation=True)
-    
-    # Generate summary
     summary_ids = t5_model.generate(inputs, max_length=150, min_length=40, length_penalty=2.0, num_beams=4, early_stopping=True)
     summary = t5_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-    
     return summary
 
 def retrieve_and_rerank_embeddings(prompt, num_results=5):
@@ -112,8 +106,7 @@ def retrieve_and_rerank_embeddings(prompt, num_results=5):
         n_results=num_results
     )
     
-    documents = [doc for doc_list in results['documents'] for doc in doc_list]  # Flatten list of lists
-    
+    documents = [doc for doc_list in results['documents'] for doc in doc_list]
     document_embeddings = sbert_model.encode(documents, convert_to_tensor=True)
     prompt_embedding_sbert = sbert_model.encode(prompt, convert_to_tensor=True)
     cosine_scores = util.pytorch_cos_sim(prompt_embedding_sbert, document_embeddings)
@@ -151,8 +144,16 @@ stream_response(prompt=f'USER PROMPT: {initial_prompt} CONTEXT: {context_summary
 # Main interaction loop
 while True:
     prompt = input('USER: \n')
-    context_documents = retrieve_and_rerank_embeddings(prompt=prompt)
-    context_summary = summarize_documents(context_documents)
-    print("Relevant Contextual Summary:\n", context_summary)
-    prompt_with_context = f'USER PROMPT: {prompt} CONTEXT: {context_summary}'
-    stream_response(prompt=prompt_with_context)
+    
+    # Check for bypass context command
+    if prompt.startswith("/f"):
+        # Strip the command and spaces
+        main_prompt = prompt[2:].strip()
+        print("Starting fresh. No context, primers, or templates will be used.")
+        stream_response(prompt=f'USER PROMPT: {main_prompt}')
+    else:
+        context_documents = retrieve_and_rerank_embeddings(prompt=prompt)
+        context_summary = summarize_documents(context_documents)
+        print("Relevant Contextual Summary:\n", context_summary)
+        prompt_with_context = f'USER PROMPT: {prompt} CONTEXT: {context_summary}'
+        stream_response(prompt=prompt_with_context)
